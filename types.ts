@@ -60,6 +60,7 @@ export interface MarketEvent extends BaseEvent {
     url: string;
   };
   priceHistory: { time: number; price: number; }[];
+  analysis?: ChartAnalysis;
 }
 
 export interface QuizEvent extends BaseEvent {

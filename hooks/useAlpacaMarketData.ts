@@ -38,6 +38,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
   const lastSpyPrice = useRef<number | null>(null);
   const lastGeminiCall = useRef<{ [symbol: string]: number }>({}); // For throttling API calls
   const lastForecastCall = useRef<number>(0); // For throttling forecast API calls
+  const lastDemoMarketEventCall = useRef<number>(0);
   
   const updateEvent = useCallback((updatedEvent: GameEvent) => {
     setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
@@ -113,7 +114,8 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         }
     })();
   }, [creds, activeGlobalEvent, updateEvent]);
-
+  
+  // Effect for Live Mode: Connects to Alpaca WebSocket to generate MarketEvents
   useEffect(() => {
     if (isDemoMode || !isPlaying) {
       if (webSocket.current) {
@@ -157,12 +159,13 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
       if (ws.readyState === WebSocket.OPEN) ws.close();
     };
   }, [isPlaying, creds, isDemoMode, createAndProcessEvent]);
-
+  
+  // --- UNIFIED GAMIFICATION LOGIC ---
+  
+  // Helper function to create a Forecast Event
   const createForecastEvent = useCallback(() => {
     const now = Date.now();
-    if (now - lastForecastCall.current < 30000) {
-      return;
-    }
+    if (now - lastForecastCall.current < 30000) return;
     lastForecastCall.current = now;
 
     const id = `event-${eventIdCounter.current++}`;
@@ -181,26 +184,40 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         setEvents(prev => [...prev.slice(-14), forecastEvent]);
         
         setTimeout(() => {
-            setEvents(prev => prev.map(e => {
-                if (e.id === id && e.type === 'forecast' && e.status === 'predicted') {
-                    return { ...e, status: 'resolved' };
-                }
-                return e;
-            }));
+            updateEvent({ ...forecastEvent, status: 'resolved' });
         }, 8000 / speed);
 
     }).catch(err => console.error("Forecast Gemini call failed:", err));
-  }, [speed]);
+  }, [speed, updateEvent]);
+  
+  // Helper function to create a Quiz Event
+  const createQuizEvent = useCallback(() => {
+      const id = `event-${eventIdCounter.current++}`;
+      const question = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
+      const quizEvent: QuizEvent = {
+          id, type: 'quiz', question, text: 'Test your knowledge!', lane: 0,
+      };
+      setEvents(prev => [...prev.slice(-14), quizEvent]);
+  }, []);
 
-
+  // Helper function to create a Recommendation Event
+  const createRecommendationEvent = useCallback(() => {
+      const id = `event-${eventIdCounter.current++}`;
+      const recommendation = RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)];
+      const recommendationEvent: RecommendationEvent = {
+          id, type: 'recommendation', text: recommendation, lane: 0,
+      };
+      setEvents(prev => [...prev.slice(-14), recommendationEvent]);
+  }, []);
+  
+  // Effect for Demo Mode: Simulates MarketEvents and GlobalEvents
   useEffect(() => {
     if (!isPlaying || !isDemoMode) return;
 
-    const interval = setInterval(() => {
+    const demoMarketInterval = setInterval(() => {
         const id = `event-${eventIdCounter.current++}`;
-        const random = Math.random();
         
-        if (random < 0.03 && !activeGlobalEvent) {
+        if (Math.random() < 0.1 && !activeGlobalEvent) {
              const isShock = Math.random() > 0.5;
             setEvents(prev => [...prev.slice(-14), {
                 id, type: isShock ? 'shock' : 'streak',
@@ -210,11 +227,10 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             } as GlobalMarketEvent]);
             return;
         }
-
-        if (random < 0.1) { 
-            createForecastEvent();
-            return;
-        }
+        
+        const now = Date.now();
+        if (now - lastDemoMarketEventCall.current < 10000) return;
+        lastDemoMarketEventCall.current = now;
 
         let symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
         let priceChangePercent = (Math.random() - 0.45) * 5;
@@ -244,47 +260,32 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             updateEvent({ ...baseEvent, ...details });
         }).catch(err => console.error("Demo Gemini call failed:", err));
 
-    }, 5000 / speed);
+    }, 18000 / speed);
 
-    return () => clearInterval(interval);
-  }, [speed, isPlaying, isDemoMode, activeGlobalEvent, createForecastEvent, updateEvent]);
+    return () => clearInterval(demoMarketInterval);
+  }, [speed, isPlaying, isDemoMode, activeGlobalEvent, updateEvent]);
   
+  
+  // Effect for Game Events (Quiz, Recs, Forecast): Runs in BOTH modes
   useEffect(() => {
-    if (!isPlaying || isDemoMode) return;
+    if (!isPlaying) return;
 
-    const eventGeneratorInterval = setInterval(() => {
+    const gameEventInterval = setInterval(() => {
         const random = Math.random();
-        const id = `event-${eventIdCounter.current++}`;
 
         if (random < 0.25) {
-            const question = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
-            const quizEvent: QuizEvent = {
-                id,
-                type: 'quiz',
-                question,
-                text: 'Test your knowledge!',
-                lane: 0,
-            };
-            setEvents(prev => [...prev.slice(-14), quizEvent]);
-        } 
-        else if (random < 0.40) {
-            const recommendation = RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)];
-            const recommendationEvent: RecommendationEvent = {
-                id,
-                type: 'recommendation',
-                text: recommendation,
-                lane: 0,
-            };
-            setEvents(prev => [...prev.slice(-14), recommendationEvent]);
-        }
-        else if (random < 0.50) {
+            createQuizEvent();
+        } else if (random < 0.45) {
+            createRecommendationEvent();
+        } else if (random < 0.60) {
             createForecastEvent();
         }
-    }, 15000); 
+        // ~40% chance for nothing, providing breathing room
+    }, 12000 / speed); 
 
-    return () => clearInterval(eventGeneratorInterval);
+    return () => clearInterval(gameEventInterval);
 
-  }, [isPlaying, isDemoMode, createForecastEvent]);
+  }, [isPlaying, speed, createQuizEvent, createRecommendationEvent, createForecastEvent]);
 
 
   return { events, marketPulse, updateEvent };

@@ -13,7 +13,7 @@ import NewsTicker from './NewsTicker';
 import { useAlpacaMarketData } from '../hooks/useAlpacaMarketData';
 import { generateKeyTakeaway, generateLiveNewsHeadlines } from '../services/geminiService';
 import { getAlpacaAccount, placeAlpacaOrder, closeAllPositions } from '../services/alpacaService';
-import type { PlayerStats, GameSettings, QuizQuestion, MarketEvent, KeyTakeaway, AlpacaCreds, GameEffect, GlobalMarketEvent, PlayerPerks, GameEvent, ForecastEvent, QuizEvent, RecommendationEvent } from '../types';
+import type { PlayerStats, GameSettings, QuizQuestion, MarketEvent, KeyTakeaway, AlpacaCreds, GameEffect, GlobalMarketEvent, PlayerPerks, GameEvent, ForecastEvent, QuizEvent, RecommendationEvent, ChartAnalysis } from '../types';
 import { quizQuestions } from '../data/quizQuestions';
 import { HelpCircle, Eye, EyeOff, GitCommit } from 'lucide-react';
 
@@ -70,7 +70,7 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
     };
 
     fetchHeadlines(); // Fetch on initial load
-    const interval = setInterval(fetchHeadlines, 45000); // Fetch every 45 seconds
+    const interval = setInterval(fetchHeadlines, 90000); // Fetch every 90 seconds
 
     return () => clearInterval(interval);
   }, []);
@@ -153,39 +153,36 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
     }
   }, []);
 
-  const handleCloseEventDetail = useCallback(async (didExecute: boolean) => {
-    if (didExecute && selectedEvent) {
+  const handleCloseEventDetail = useCallback(async (tradeDetails: { execute: boolean; quantity: number; stopLoss?: number; }) => {
+    if (tradeDetails.execute && selectedEvent) {
        if (isDemo) {
-            // Original demo logic
+            const pnl = selectedEvent.value! * tradeDetails.quantity;
             if (selectedEvent.type === 'opportunity') {
                 const newStreak = stats.streak + 1;
                 setStats(prev => ({
-                ...prev,
-                equity: prev.equity + selectedEvent.value!,
-                streak: newStreak,
-                gemin: prev.gemin + 1,
+                    ...prev,
+                    equity: prev.equity + pnl,
+                    streak: newStreak,
+                    gemin: prev.gemin + 1,
                 }));
                 if (newStreak > 0 && newStreak % STREAK_FOR_POWERUP === 0) {
-                setActiveEffects(prev => [...prev, POWERUPS.MARKET_SIGHT]);
+                    setActiveEffects(prev => [...prev, POWERUPS.MARKET_SIGHT]);
                 }
             } else { // trap
                 setStats(prev => ({
-                ...prev,
-                equity: prev.equity + selectedEvent.value!,
-                streak: 0,
+                    ...prev,
+                    equity: prev.equity + pnl,
+                    streak: 0,
                 }));
                 if (selectedEvent.value! < TRAP_VALUE_FOR_GLITCH) {
-                setActiveEffects(prev => [...prev, GLITCHES.MARKET_FOG]);
+                    setActiveEffects(prev => [...prev, GLITCHES.MARKET_FOG]);
                 }
             }
        } else {
             // Live Alpaca trading logic
             try {
                 const side = selectedEvent.type === 'opportunity' ? 'buy' : 'sell';
-                // For simplicity, we trade 1 share/coin per event.
-                // A more advanced implementation could calculate quantity based on event value.
-                const quantity = 1;
-                await placeAlpacaOrder(selectedEvent.symbol, quantity, side, alpacaCreds);
+                await placeAlpacaOrder(selectedEvent.symbol, tradeDetails.quantity, side, alpacaCreds, tradeDetails.stopLoss);
 
                 // Update streak and other game mechanics based on the action
                  if (side === 'buy') {
@@ -278,6 +275,14 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
         // Optionally show an error message
     }
   }, [alpacaCreds, isDemo]);
+  
+  const handleAnalysisComplete = useCallback((eventId: string, analysis: ChartAnalysis) => {
+    const eventToUpdate = marketEvents.find(e => e.id === eventId);
+    if (eventToUpdate) {
+        updateEvent({ ...eventToUpdate, analysis });
+    }
+  }, [marketEvents, updateEvent]);
+
 
   const hasEffect = (id: GameEffect['id']) => activeEffects.some(e => e.id === id);
 
@@ -362,7 +367,7 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
       
       <NewsTicker headlines={headlines} speed={settings.speed} />
       <QuizModal isOpen={isQuizOpen} question={quizQuestion} onClose={handleCloseQuiz} isMandatory={!!activeMandatoryQuizId} />
-      <EventDetailModal isOpen={!!selectedEvent} event={selectedEvent} onClose={handleCloseEventDetail} />
+      <EventDetailModal isOpen={!!selectedEvent} event={selectedEvent} onClose={handleCloseEventDetail} onAnalysisComplete={handleAnalysisComplete} />
       <ForecastModal isOpen={!!selectedForecast} event={selectedForecast} onClose={handleForecastPredict} />
 
       <ActionCenter onOpenSettings={onOpenSettings} onOpenInfo={() => onOpenInfo('Market Volatility')} onOpenQuiz={() => handleOpenActionCenterQuiz('Risk Management')} onEndSession={onEndSession} onLiquidate={handleLiquidate} isTtsEnabled={settings.tts} stats={stats} marketEvents={marketEvents} />

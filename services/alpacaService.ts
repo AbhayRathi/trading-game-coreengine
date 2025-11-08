@@ -23,14 +23,22 @@ export const getAlpacaAccount = async (creds: AlpacaCreds): Promise<{ equity: nu
     return { equity: parseFloat(data.equity) };
 };
 
-export const placeAlpacaOrder = async (symbol: string, qty: number, side: 'buy' | 'sell', creds: AlpacaCreds): Promise<any> => {
-    const order = {
+export const placeAlpacaOrder = async (symbol: string, qty: number, side: 'buy' | 'sell', creds: AlpacaCreds, stopLoss?: number): Promise<any> => {
+    const order: any = {
         symbol,
         qty,
         side,
         type: 'market',
         time_in_force: 'day',
     };
+
+    if (stopLoss) {
+        order.stop_loss = {
+            stop_price: stopLoss.toString(),
+        };
+        order.order_class = 'simple';
+    }
+
     const response = await fetch(`${API_URL}/v2/orders`, {
         method: 'POST',
         headers: getAuthHeaders(creds),
