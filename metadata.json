@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Alpha Stream",
+  "description": "A gamified finance education platform that turns live market data into an interactive, arcade-like experience with an AI agent providing insights, coaching, and multimodal interaction.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
