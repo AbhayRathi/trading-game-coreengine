@@ -52,8 +52,6 @@ const DetailedChart: React.FC<DetailedChartProps> = ({ priceHistory, annotations
     if (!point) return null;
     const x = getX(anno.index);
     const y = getY(point.price);
-    // FIX: The type for `textAnchor` was inferred as a generic string, which is invalid for the SVG attribute.
-    // Explicitly typing it as 'start' | 'end' resolves the issue.
     const textAnchor: 'start' | 'end' = x > width / 2 ? 'end' : 'start';
     return {
         ...anno,

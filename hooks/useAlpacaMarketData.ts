@@ -100,7 +100,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         const details = JSON.parse(jsonResponse);
         updateEvent({ ...baseEvent, ...details });
 
-// FIX: Corrected invalid `catch (error) =>` syntax to `catch (error)`.
     } catch (error) {
         console.error(`Failed to process event for ${symbol}:`, error);
     }
