@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { MarketEvent, AlpacaCreds, GlobalMarketEvent, GameEvent, ForecastEvent } from '../types';
+import type { MarketEvent, AlpacaCreds, GlobalMarketEvent, GameEvent, ForecastEvent, QuizEvent, RecommendationEvent } from '../types';
 import { quizQuestions } from '../data/quizQuestions';
 import { generateMarketEventDetails, generateForecastHeadlines } from '../services/geminiService';
 import { getRecentNewsForSymbol, getInitialPriceHistory } from '../services/alpacaService';
@@ -57,7 +57,11 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
     const priceChangePercent = (priceChange / lastPrice.current[symbol]) * 100;
     lastPrice.current[symbol] = price;
     
-    if (Math.abs(priceChangePercent) < 0.05) return;
+    // FIX: The previous threshold (0.05%) was too high, filtering out most live trades.
+    // Lowered threshold to be more sensitive to real-time market movements.
+    const isCrypto = symbol.includes('/');
+    const threshold = isCrypto ? 0.02 : 0.01;
+    if (Math.abs(priceChangePercent) < threshold) return;
     
     // Throttle Gemini API calls to prevent rate-limiting on volatile stocks
     const now = Date.now();
@@ -96,6 +100,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         const details = JSON.parse(jsonResponse);
         updateEvent({ ...baseEvent, ...details });
 
+// FIX: Corrected invalid `catch (error) =>` syntax to `catch (error)`.
     } catch (error) {
         console.error(`Failed to process event for ${symbol}:`, error);
     }
@@ -227,10 +232,53 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             updateEvent({ ...baseEvent, ...details });
         }).catch(err => console.error("Demo Gemini call failed:", err));
 
-    }, 5000); // FIX: Decoupled API call frequency from game speed to prevent rate limiting.
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [speed, isPlaying, isDemoMode, activeGlobalEvent, createForecastEvent, updateEvent]);
+  
+  // FIX: Added a new "game director" to generate non-market events during live play,
+  // making the experience more dynamic and engaging.
+  useEffect(() => {
+    if (!isPlaying || isDemoMode) return;
+
+    const eventGeneratorInterval = setInterval(() => {
+        const random = Math.random();
+        const id = `event-${eventIdCounter.current++}`;
+
+        // 25% chance for a quiz
+        if (random < 0.25) {
+            const question = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
+            const quizEvent: QuizEvent = {
+                id,
+                type: 'quiz',
+                question,
+                text: 'Test your knowledge!',
+                lane: 0, // Not rendered in a lane, but required by BaseEvent.
+            };
+            setEvents(prev => [...prev.slice(-14), quizEvent]);
+        } 
+        // 15% chance for a recommendation
+        else if (random < 0.40) {
+            const recommendation = RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)];
+            const recommendationEvent: RecommendationEvent = {
+                id,
+                type: 'recommendation',
+                text: recommendation,
+                lane: 0,
+            };
+            setEvents(prev => [...prev.slice(-14), recommendationEvent]);
+        }
+        // 10% chance for a forecast
+        else if (random < 0.50) {
+            createForecastEvent();
+        }
+    }, 15000); // Every 15 seconds
+
+    return () => clearInterval(eventGeneratorInterval);
+
+  }, [isPlaying, isDemoMode, createForecastEvent]);
+
 
   return { events, marketPulse, updateEvent };
 };

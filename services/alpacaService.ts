@@ -88,7 +88,9 @@ export const getRecentNewsForSymbol = async (symbol: string, creds: AlpacaCreds)
 export const getInitialPriceHistory = async (symbol: string, creds: AlpacaCreds): Promise<{ time: number; price: number; }[]> => {
     const isCrypto = symbol.includes('/');
     const endpoint = isCrypto ? 'crypto' : 'stocks';
-    const url = `${DATA_API_URL}/${endpoint}/${symbol}/bars?timeframe=1Min&limit=15`;
+    // FIX: Alpaca's bar history API for crypto requires the symbol without a slash (e.g., 'BTCUSD').
+    const formattedSymbol = isCrypto ? symbol.replace('/', '') : symbol;
+    const url = `${DATA_API_URL}/${endpoint}/${formattedSymbol}/bars?timeframe=1Min&limit=15`;
     
     try {
         const response = await fetch(url, {

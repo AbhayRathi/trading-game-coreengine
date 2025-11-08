@@ -10,9 +10,10 @@ import ForecastModal from './ForecastModal';
 import MiniChart from './MiniChart';
 import GlobalEventBanner from './GlobalEventBanner';
 import { useAlpacaMarketData } from '../hooks/useAlpacaMarketData';
-import { generateQuizQuestion, generateKeyTakeaway } from '../services/geminiService';
+import { generateKeyTakeaway } from '../services/geminiService';
 import { getAlpacaAccount, placeAlpacaOrder, closeAllPositions } from '../services/alpacaService';
 import type { PlayerStats, GameSettings, QuizQuestion, MarketEvent, KeyTakeaway, AlpacaCreds, GameEffect, GlobalMarketEvent, PlayerPerks, GameEvent, ForecastEvent, QuizEvent, RecommendationEvent } from '../types';
+import { quizQuestions } from '../data/quizQuestions';
 import { HelpCircle, Eye, EyeOff, GitCommit } from 'lucide-react';
 
 const STREAK_FOR_POWERUP = 5;
@@ -202,20 +203,12 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
     }
   }, []);
   
-  const handleOpenActionCenterQuiz = useCallback(async (topic: string) => {
+  const handleOpenActionCenterQuiz = useCallback((topic: string) => {
     setIsPaused(true);
     setIsQuizOpen(true);
-    try {
-      const jsonResponse = await generateQuizQuestion(topic);
-      setQuizQuestion(JSON.parse(jsonResponse));
-    } catch (error) {
-      console.error("Failed to generate quiz question:", error);
-      setQuizQuestion({
-        question: "What is a common strategy to mitigate risk in a portfolio?",
-        options: ["Putting all money in one stock", "Diversification", "Ignoring market news", "Frequent short-term trading"],
-        correctAnswerIndex: 1
-      });
-    }
+    // Select a random question from the predefined local list to avoid API calls
+    const randomQuestion = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
+    setQuizQuestion(randomQuestion);
   }, []);
 
   const handleCloseQuiz = useCallback((isCorrect: boolean) => {
