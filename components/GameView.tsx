@@ -155,8 +155,8 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
 
   const handleCloseEventDetail = useCallback(async (tradeDetails: { execute: boolean; quantity: number; stopLoss?: number; }) => {
     if (tradeDetails.execute && selectedEvent) {
+       const pnl = selectedEvent.value! * tradeDetails.quantity;
        if (isDemo) {
-            const pnl = selectedEvent.value! * tradeDetails.quantity;
             if (selectedEvent.type === 'opportunity') {
                 const newStreak = stats.streak + 1;
                 setStats(prev => ({
@@ -184,11 +184,29 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
                 const side = selectedEvent.type === 'opportunity' ? 'buy' : 'sell';
                 await placeAlpacaOrder(selectedEvent.symbol, tradeDetails.quantity, side, alpacaCreds, tradeDetails.stopLoss);
 
-                // Update streak and other game mechanics based on the action
+                // **OPTIMISTIC UI UPDATE**
+                // Update stats immediately for a responsive feel.
+                // The background poll will true-up the equity later.
                  if (side === 'buy') {
-                    setStats(prev => ({...prev, streak: prev.streak + 1, gemin: prev.gemin + 1}));
-                 } else {
-                    setStats(prev => ({...prev, streak: 0}));
+                    const newStreak = stats.streak + 1;
+                    setStats(prev => ({
+                        ...prev,
+                        equity: prev.equity + pnl, // Instant feedback
+                        streak: newStreak,
+                        gemin: prev.gemin + 1,
+                    }));
+                     if (newStreak > 0 && newStreak % STREAK_FOR_POWERUP === 0) {
+                        setActiveEffects(prev => [...prev, POWERUPS.MARKET_SIGHT]);
+                    }
+                 } else { // sell
+                    setStats(prev => ({
+                        ...prev,
+                        equity: prev.equity + pnl, // Instant feedback
+                        streak: 0,
+                    }));
+                     if (selectedEvent.value! < TRAP_VALUE_FOR_GLITCH) {
+                        setActiveEffects(prev => [...prev, GLITCHES.MARKET_FOG]);
+                    }
                  }
 
             } catch(error) {
