@@ -56,6 +56,51 @@ export const generateMarketEventDetails = async (symbol: string, priceChangePerc
     return response.text;
 };
 
+export const generateForecastHeadlines = async (symbol: string): Promise<string> => {
+    const outcome = Math.random() > 0.5 ? 'bullish' : 'bearish';
+    const prompt = `
+    You are an AI for a financial education game. Create a two-part news event for the stock symbol ${symbol}.
+    The final outcome should be ${outcome}.
+
+    Generate a JSON object with three fields:
+    1. "initialHeadline": A headline for an upcoming event or rumor that creates uncertainty (e.g., an earnings call, a product announcement, a regulatory hearing).
+    2. "resolutionHeadline": A follow-up headline that clearly states the outcome of the event, matching the predetermined '${outcome}' sentiment.
+    3. "outcome": The string "${outcome}".
+
+    Example for a 'bullish' outcome:
+    {
+      "initialHeadline": "Speculation mounts as ${symbol} prepares to unveil its next-gen AI chip tomorrow.",
+      "resolutionHeadline": "BREAKING: ${symbol}'s new chip exceeds all performance benchmarks, sending stock soaring.",
+      "outcome": "bullish"
+    }
+
+    Example for a 'bearish' outcome:
+    {
+      "initialHeadline": "${symbol} faces a critical patent lawsuit, with a verdict expected any moment.",
+      "resolutionHeadline": "OUCH: ${symbol} loses patent case, ordered to pay hefty fines; investors panic.",
+      "outcome": "bearish"
+    }
+    `;
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    initialHeadline: { type: Type.STRING },
+                    resolutionHeadline: { type: Type.STRING },
+                    outcome: { type: Type.STRING },
+                },
+                required: ['initialHeadline', 'resolutionHeadline', 'outcome']
+            }
+        }
+    });
+    return response.text;
+};
+
+
 export const generateChartAnalysis = async (event: MarketEvent): Promise<string> => {
     const keyConcepts = ["Price vs. Value", "Reading Candlestick Charts", "Market Sentiment", "Support and Resistance"];
     const randomConcept = keyConcepts[Math.floor(Math.random() * keyConcepts.length)];
@@ -86,7 +131,7 @@ export const generateChartAnalysis = async (event: MarketEvent): Promise<string>
       ]
     }
 
-    Select two distinct and interesting points from the price history for the annotations. For example, a peak, a trough, or the start of a trend.
+    Select two distinct and interesting points from the price history for the annotations. For example, a peak, a a trough, or the start of a trend.
     Ensure the entire output is a single, valid JSON object.
     `;
     const response = await ai.models.generateContent({
@@ -94,6 +139,43 @@ export const generateChartAnalysis = async (event: MarketEvent): Promise<string>
         contents: prompt,
         config: {
             responseMimeType: 'application/json',
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    analysisText: { type: Type.STRING },
+                    keyConcept: {
+                        type: Type.OBJECT,
+                        properties: {
+                            title: { type: Type.STRING },
+                            explanation: { type: Type.STRING }
+                        },
+                        required: ['title', 'explanation']
+                    },
+                    relatedNews: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                headline: { type: Type.STRING },
+                                source: { type: Type.STRING }
+                            },
+                            required: ['headline', 'source']
+                        }
+                    },
+                    annotations: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                index: { type: Type.INTEGER },
+                                text: { type: Type.STRING }
+                            },
+                            required: ['index', 'text']
+                        }
+                    }
+                },
+                required: ['analysisText', 'keyConcept', 'relatedNews', 'annotations']
+            }
         }
     });
 

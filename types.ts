@@ -22,16 +22,36 @@ export interface InfoCardContent {
   explanation: string;
 }
 
-export interface MarketEvent {
+export type GameEffectType = 'powerup' | 'glitch';
+export type GameEffect = {
+  id: 'MARKET_SIGHT' | 'MARKET_FOG';
+  type: GameEffectType;
+  name: string;
+  description: string;
+  duration: number; // in seconds
+  icon: React.ElementType;
+};
+
+export type GlobalEventType = 'shock' | 'streak';
+export interface GlobalMarketEvent {
+    id: string;
+    type: GlobalEventType;
+    title: string;
+    description: string;
+    duration: number; // in seconds
+    active: boolean;
+}
+
+export interface BaseEvent {
   id: string;
-  type: 'opportunity' | 'trap' | 'recommendation' | 'quiz' | 'mandatory_quiz';
-  value?: number;
-  symbol?: string;
-  text?: string;
-  question?: QuizQuestion;
-  lane: number; // 0, 1, or 2 for tracks, -1 for non-track events
+  lane: number;
+}
+
+export interface MarketEvent extends BaseEvent {
+  type: 'opportunity' | 'trap';
+  value: number;
+  symbol: string;
   faded: boolean;
-  // New properties for detailed event descriptions
   title: string;
   explanation: string;
   news: {
@@ -41,6 +61,32 @@ export interface MarketEvent {
   };
   priceHistory: { time: number; price: number; }[];
 }
+
+export interface QuizEvent extends BaseEvent {
+    type: 'quiz' | 'mandatory_quiz';
+    question: QuizQuestion;
+    text: string;
+}
+
+export interface RecommendationEvent extends BaseEvent {
+    type: 'recommendation';
+    text: string;
+}
+
+export interface ForecastEvent extends BaseEvent {
+    type: 'forecast';
+    symbol: string;
+    status: 'pending' | 'predicted' | 'resolved';
+    initialHeadline: string;
+    resolutionHeadline?: string;
+    outcome?: 'bullish' | 'bearish';
+    prediction?: 'bullish' | 'bearish';
+    reward: number;
+}
+
+
+export type GameEvent = MarketEvent | QuizEvent | RecommendationEvent | GlobalMarketEvent | ForecastEvent;
+
 
 export interface KeyTakeaway {
   id: string;
@@ -83,4 +129,11 @@ export interface ChartAnalysis {
     source: string;
   }[];
   annotations: ChartAnnotation[];
+}
+
+export interface PlayerPerks {
+    longerPowerups: boolean;
+    shorterGlitches: boolean;
+    quizWhiz: boolean;
+    takeawayArchive: boolean;
 }

@@ -4,8 +4,9 @@ import GameView from './components/GameView';
 import SettingsModal from './components/SettingsModal';
 import ImageEditor from './components/ImageEditor';
 import InfoModal from './components/InfoModal';
+import SessionSummary from './components/SessionSummary';
 import { generateInfoCardContent } from './services/geminiService';
-import type { PlayerStats, GameSettings, InfoCardContent, AlpacaCreds } from './types';
+import type { PlayerStats, GameSettings, InfoCardContent, AlpacaCreds, PlayerPerks } from './types';
 
 const INITIAL_STATS: PlayerStats = {
   pnl: 0,
@@ -20,11 +21,20 @@ const INITIAL_SETTINGS: GameSettings = {
   tts: true,
 };
 
+const INITIAL_PERKS: PlayerPerks = {
+  longerPowerups: false,
+  shorterGlitches: false,
+  quizWhiz: false,
+  takeawayArchive: false,
+};
+
 function App() {
-  const [gameState, setGameState] = useState<'home' | 'playing'>('home');
+  const [gameState, setGameState] = useState<'home' | 'playing' | 'summary'>('home');
   const [stats, setStats] = useState<PlayerStats>(INITIAL_STATS);
+  const [sessionStats, setSessionStats] = useState<PlayerStats>(INITIAL_STATS);
   const [settings, setSettings] = useState<GameSettings>(INITIAL_SETTINGS);
   const [alpacaCreds, setAlpacaCreds] = useState<AlpacaCreds | null>(null);
+  const [playerPerks, setPlayerPerks] = useState<PlayerPerks>(INITIAL_PERKS);
 
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -36,15 +46,21 @@ function App() {
   
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
 
+  const startNewSession = () => {
+    const newInitialStats = { ...INITIAL_STATS, gemin: stats.gemin };
+    setStats(newInitialStats);
+    setSessionStats(newInitialStats);
+    setGameState('playing');
+  }
+
   const handleLaunchSimulation = (creds: AlpacaCreds) => {
     setAlpacaCreds(creds);
-    setGameState('playing');
+    startNewSession();
   };
   
   const handleLaunchDemo = () => {
-    // Use dummy credentials for demo mode to satisfy the game view's prop requirements
     setAlpacaCreds({ key: 'demo', secret: 'demo' });
-    setGameState('playing');
+    startNewSession();
   };
 
   const handleImageUpdate = (newImageUrl: string) => {
@@ -73,12 +89,32 @@ function App() {
     setStats(prev => ({ ...prev, gemin: prev.gemin + 2 }));
   };
 
+  const handleEndSession = () => {
+    setSessionStats(stats); // Save final stats for the summary
+    setGameState('summary');
+  };
+  
+  const handleRestart = () => {
+     setGameState('home');
+  };
+
+  const handlePurchasePerk = (perk: keyof PlayerPerks, cost: number) => {
+    if (stats.gemin >= cost && !playerPerks[perk]) {
+        setStats(prev => ({ ...prev, gemin: prev.gemin - cost }));
+        setPlayerPerks(prev => ({ ...prev, [perk]: true }));
+    }
+  };
+
+
   if (gameState === 'home') {
     return <HomePage onLaunchSimulation={handleLaunchSimulation} onLaunchDemo={handleLaunchDemo} backgroundImage={backgroundImage} />;
   }
   
+  if (gameState === 'summary') {
+    return <SessionSummary stats={sessionStats} onRestart={handleRestart} />;
+  }
+  
   if (!alpacaCreds) {
-    // This is a fallback, should be handled by the HomePage logic
      return <HomePage onLaunchSimulation={handleLaunchSimulation} onLaunchDemo={handleLaunchDemo} backgroundImage={backgroundImage} />;
   }
 
@@ -88,8 +124,10 @@ function App() {
         stats={stats}
         setStats={setStats}
         settings={settings}
+        perks={playerPerks}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenInfo={handleOpenInfo}
+        onEndSession={handleEndSession}
         backgroundImage={backgroundImage}
         alpacaCreds={alpacaCreds}
       />
@@ -99,12 +137,14 @@ function App() {
         settings={settings}
         onSettingsChange={setSettings}
         onOpenImageEditor={() => setIsImageEditorOpen(true)}
+        geminBalance={stats.gemin}
+        perks={playerPerks}
+        onPurchasePerk={handlePurchasePerk}
       />
       {isImageEditorOpen && <ImageEditor onClose={() => setIsImageEditorOpen(false)} onImageUpdate={handleImageUpdate} />}
       <InfoModal
         isOpen={isInfoOpen}
         isLoading={isGeminiLoading}
-        // FIX: The prop 'content' was being passed an undefined variable 'content'. It has been corrected to use the state variable 'infoContent'.
         content={infoContent}
         onClose={handleCloseInfo}
       />

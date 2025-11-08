@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Info, HelpCircle } from 'lucide-react';
+import { Settings, Info, HelpCircle, LogOut } from 'lucide-react';
 import Coach from './Coach';
 import type { PlayerStats, MarketEvent } from '../types';
 
@@ -7,12 +7,13 @@ interface ActionCenterProps {
   onOpenSettings: () => void;
   onOpenInfo: () => void;
   onOpenQuiz: () => void;
+  onEndSession: () => void;
   isTtsEnabled: boolean;
   stats: PlayerStats;
   marketEvents: MarketEvent[];
 }
 
-const ActionCenter: React.FC<ActionCenterProps> = ({ onOpenSettings, onOpenInfo, onOpenQuiz, isTtsEnabled, stats, marketEvents }) => {
+const ActionCenter: React.FC<ActionCenterProps> = ({ onOpenSettings, onOpenInfo, onOpenQuiz, onEndSession, isTtsEnabled, stats, marketEvents }) => {
   return (
     <footer className="w-full max-w-4xl mx-auto flex justify-center sm:justify-between items-center gap-4 p-4 z-20">
       <div className="flex gap-4">
@@ -24,6 +25,9 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ onOpenSettings, onOpenInfo,
         </button>
          <button title="Take a Quiz" onClick={onOpenQuiz} className="w-14 h-14 rounded-full flex items-center justify-center bg-white/80 backdrop-blur-sm shadow-md hover:bg-slate-200/80 transition-colors text-slate-600">
           <HelpCircle />
+        </button>
+        <button title="Quit Session" onClick={onEndSession} className="w-14 h-14 rounded-full flex items-center justify-center bg-red-100/80 backdrop-blur-sm shadow-md hover:bg-red-200/80 transition-colors text-red-600">
+          <LogOut />
         </button>
       </div>
       <Coach 
