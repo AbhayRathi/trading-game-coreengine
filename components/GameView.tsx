@@ -9,8 +9,9 @@ import EventDetailModal from './EventDetailModal';
 import ForecastModal from './ForecastModal';
 import MiniChart from './MiniChart';
 import GlobalEventBanner from './GlobalEventBanner';
+import NewsTicker from './NewsTicker';
 import { useAlpacaMarketData } from '../hooks/useAlpacaMarketData';
-import { generateKeyTakeaway } from '../services/geminiService';
+import { generateKeyTakeaway, generateLiveNewsHeadlines } from '../services/geminiService';
 import { getAlpacaAccount, placeAlpacaOrder, closeAllPositions } from '../services/alpacaService';
 import type { PlayerStats, GameSettings, QuizQuestion, MarketEvent, KeyTakeaway, AlpacaCreds, GameEffect, GlobalMarketEvent, PlayerPerks, GameEvent, ForecastEvent, QuizEvent, RecommendationEvent } from '../types';
 import { quizQuestions } from '../data/quizQuestions';
@@ -44,6 +45,7 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
   
   const [activeEffects, setActiveEffects] = useState<GameEffect[]>([]);
   const [globalEvent, setGlobalEvent] = useState<GlobalMarketEvent | null>(null);
+  const [headlines, setHeadlines] = useState<string[]>([]);
   
   const isDemo = alpacaCreds.key === 'demo';
   const { events, marketPulse, updateEvent } = useAlpacaMarketData(settings.speed, !isPaused && !isQuizOpen && !selectedEvent && !selectedForecast, alpacaCreds, globalEvent);
@@ -54,6 +56,24 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
   const GLITCHES: Record<'MARKET_FOG', GameEffect> = {
     'MARKET_FOG': { id: 'MARKET_FOG', type: 'glitch', name: 'Market Fog', description: 'Hides event details, increasing uncertainty.', duration: 20 - (perks.shorterGlitches ? 5 : 0), icon: EyeOff },
   };
+
+  useEffect(() => {
+    const fetchHeadlines = async () => {
+        try {
+            const response = await generateLiveNewsHeadlines();
+            const newHeadlines = JSON.parse(response);
+            setHeadlines(newHeadlines);
+        } catch (error) {
+            console.error("Failed to fetch news headlines:", error);
+            setHeadlines(["Market data is currently being analyzed...", "Economic indicators show mixed signals...", "Tech sector sees increased volatility..."]);
+        }
+    };
+
+    fetchHeadlines(); // Fetch on initial load
+    const interval = setInterval(fetchHeadlines, 45000); // Fetch every 45 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Sync with Alpaca account on start and periodically
   useEffect(() => {
@@ -339,7 +359,8 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
 
         </div>
       </main>
-
+      
+      <NewsTicker headlines={headlines} speed={settings.speed} />
       <QuizModal isOpen={isQuizOpen} question={quizQuestion} onClose={handleCloseQuiz} isMandatory={!!activeMandatoryQuizId} />
       <EventDetailModal isOpen={!!selectedEvent} event={selectedEvent} onClose={handleCloseEventDetail} />
       <ForecastModal isOpen={!!selectedForecast} event={selectedForecast} onClose={handleForecastPredict} />

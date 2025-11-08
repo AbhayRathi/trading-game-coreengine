@@ -37,73 +37,81 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
   const [marketPulse, setMarketPulse] = useState(0); // -1 for down, 0 for neutral, 1 for up
   const lastSpyPrice = useRef<number | null>(null);
   const lastGeminiCall = useRef<{ [symbol: string]: number }>({}); // For throttling API calls
+  const lastForecastCall = useRef<number>(0); // For throttling forecast API calls
   
   const updateEvent = useCallback((updatedEvent: GameEvent) => {
     setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
   }, []);
 
-  const createAndProcessEvent = useCallback(async (symbol: string, price: number, size: number) => {
-    if (!lastPrice.current[symbol]) {
-        const history = await getInitialPriceHistory(symbol, creds);
-        if (history.length > 0) {
-            lastPrice.current[symbol] = history[history.length - 1].price;
-        } else {
-            lastPrice.current[symbol] = price;
+  const createAndProcessEvent = useCallback((symbol: string, price: number, size: number) => {
+    (async () => {
+        if (!lastPrice.current[symbol]) {
+            const history = await getInitialPriceHistory(symbol, creds);
+            if (history.length > 0) {
+                lastPrice.current[symbol] = history[history.length - 1].price;
+            } else {
+                lastPrice.current[symbol] = price;
+            }
+            return;
         }
-        return;
-    }
     
-    const priceChange = price - lastPrice.current[symbol];
-    const priceChangePercent = (priceChange / lastPrice.current[symbol]) * 100;
-    lastPrice.current[symbol] = price;
-    
-    // FIX: The previous threshold (0.05%) was too high, filtering out most live trades.
-    // Lowered threshold to be more sensitive to real-time market movements.
-    const isCrypto = symbol.includes('/');
-    const threshold = isCrypto ? 0.02 : 0.01;
-    if (Math.abs(priceChangePercent) < threshold) return;
-    
-    // Throttle Gemini API calls to prevent rate-limiting on volatile stocks
-    const now = Date.now();
-    const lastCallTime = lastGeminiCall.current[symbol] ?? 0;
-    if (now - lastCallTime < 5000) { // Limit to one call every 5 seconds per symbol
-        return;
-    }
-    lastGeminiCall.current[symbol] = now;
-    
-    const id = `event-${eventIdCounter.current++}`;
-    let type: 'opportunity' | 'trap' = priceChangePercent > 0 ? 'opportunity' : 'trap';
+        const priceChange = price - lastPrice.current[symbol];
+        const priceChangePercent = (priceChange / lastPrice.current[symbol]) * 100;
+        lastPrice.current[symbol] = price;
+        
+        const isCrypto = symbol.includes('/');
+        const threshold = isCrypto ? 0.02 : 0.01;
+        if (Math.abs(priceChangePercent) < threshold) return;
+        
+        const now = Date.now();
+        const lastCallTime = lastGeminiCall.current[symbol] ?? 0;
+        if (now - lastCallTime < 5000) return;
+        lastGeminiCall.current[symbol] = now;
+        
+        const id = `event-${eventIdCounter.current++}`;
+        let type: 'opportunity' | 'trap' = priceChangePercent > 0 ? 'opportunity' : 'trap';
 
-    if (activeGlobalEvent) {
-        if (activeGlobalEvent.type === 'streak' && type === 'trap') return;
-        if (activeGlobalEvent.type === 'shock' && type === 'opportunity') return;
-    }
-    
-    const value = Math.abs(priceChangePercent * 10) + (size / 100);
-    
-    try {
-        const [news, priceHistory] = await Promise.all([
-            getRecentNewsForSymbol(symbol, creds),
-            getInitialPriceHistory(symbol, creds)
-        ]);
+        if (activeGlobalEvent) {
+            if (activeGlobalEvent.type === 'streak' && type === 'trap') return;
+            if (activeGlobalEvent.type === 'shock' && type === 'opportunity') return;
+        }
+        
+        const value = Math.abs(priceChangePercent * 10) + (size / 100);
 
+        // Create a placeholder event immediately for instant UI feedback
         const baseEvent: MarketEvent = {
             id, type, symbol, value: type === 'trap' ? -value : value,
             lane: Math.floor(Math.random() * 3),
-            title: "Market Movement", explanation: "Price has changed due to market activity.",
-            news, priceHistory, faded: false
+            faded: false, title: symbol, explanation: "Analyzing market data...",
+            news: { headline: "Fetching latest news...", source: "", url: "" },
+            priceHistory: Array.from({length: 15}, () => ({time: 0, price: lastPrice.current[symbol]})),
         };
-        
+
         setEvents(prev => [...prev.slice(-14), baseEvent]);
 
-        const jsonResponse = await generateMarketEventDetails(symbol, priceChangePercent, news.headline);
-        const details = JSON.parse(jsonResponse);
-        updateEvent({ ...baseEvent, ...details });
+        // Asynchronously enrich the event with data from Alpaca and Gemini
+        try {
+            const news = await getRecentNewsForSymbol(symbol, creds);
+            const [priceHistory, geminiResponse] = await Promise.all([
+                getInitialPriceHistory(symbol, creds),
+                generateMarketEventDetails(symbol, priceChangePercent, news.headline)
+            ]);
+            const geminiDetails = JSON.parse(geminiResponse);
 
-    } catch (error) {
-        console.error(`Failed to process event for ${symbol}:`, error);
-    }
+            const enrichedEvent: MarketEvent = {
+                ...baseEvent,
+                ...geminiDetails,
+                news,
+                priceHistory: priceHistory.length > 0 ? priceHistory : baseEvent.priceHistory,
+            };
+            
+            updateEvent(enrichedEvent);
 
+        } catch (error) {
+            console.error(`Failed to enrich event for ${symbol}:`, error);
+            updateEvent({ ...baseEvent, title: `${symbol} - Data Error`, explanation: "Could not load full details for this event." });
+        }
+    })();
   }, [creds, activeGlobalEvent, updateEvent]);
 
   useEffect(() => {
@@ -151,6 +159,12 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
   }, [isPlaying, creds, isDemoMode, createAndProcessEvent]);
 
   const createForecastEvent = useCallback(() => {
+    const now = Date.now();
+    if (now - lastForecastCall.current < 30000) {
+      return;
+    }
+    lastForecastCall.current = now;
+
     const id = `event-${eventIdCounter.current++}`;
     const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
     
@@ -166,7 +180,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         };
         setEvents(prev => [...prev.slice(-14), forecastEvent]);
         
-        // Schedule resolution
         setTimeout(() => {
             setEvents(prev => prev.map(e => {
                 if (e.id === id && e.type === 'forecast' && e.status === 'predicted') {
@@ -198,7 +211,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             return;
         }
 
-        if (random < 0.1) { // 10% chance for a forecast event
+        if (random < 0.1) { 
             createForecastEvent();
             return;
         }
@@ -231,13 +244,11 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             updateEvent({ ...baseEvent, ...details });
         }).catch(err => console.error("Demo Gemini call failed:", err));
 
-    }, 5000);
+    }, 5000 / speed);
 
     return () => clearInterval(interval);
   }, [speed, isPlaying, isDemoMode, activeGlobalEvent, createForecastEvent, updateEvent]);
   
-  // FIX: Added a new "game director" to generate non-market events during live play,
-  // making the experience more dynamic and engaging.
   useEffect(() => {
     if (!isPlaying || isDemoMode) return;
 
@@ -245,7 +256,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         const random = Math.random();
         const id = `event-${eventIdCounter.current++}`;
 
-        // 25% chance for a quiz
         if (random < 0.25) {
             const question = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
             const quizEvent: QuizEvent = {
@@ -253,11 +263,10 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
                 type: 'quiz',
                 question,
                 text: 'Test your knowledge!',
-                lane: 0, // Not rendered in a lane, but required by BaseEvent.
+                lane: 0,
             };
             setEvents(prev => [...prev.slice(-14), quizEvent]);
         } 
-        // 15% chance for a recommendation
         else if (random < 0.40) {
             const recommendation = RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)];
             const recommendationEvent: RecommendationEvent = {
@@ -268,11 +277,10 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             };
             setEvents(prev => [...prev.slice(-14), recommendationEvent]);
         }
-        // 10% chance for a forecast
         else if (random < 0.50) {
             createForecastEvent();
         }
-    }, 15000); // Every 15 seconds
+    }, 15000); 
 
     return () => clearInterval(eventGeneratorInterval);
 

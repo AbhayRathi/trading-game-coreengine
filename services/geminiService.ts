@@ -23,6 +23,23 @@ CURRENT GAME STATE:
 `;
 }
 
+export const generateLiveNewsHeadlines = async (): Promise<string> => {
+    const prompt = `You are a financial news AI. Generate a JSON array of 5 realistic, breaking financial news headlines. The headlines should be diverse, covering stocks, crypto, and macroeconomic events. Some can be positive, some negative. Format as a simple JSON array of strings.`;
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+            }
+        }
+    });
+    return response.text;
+};
+
+
 export const generateMarketEventDetails = async (symbol: string, priceChangePercent: number, newsHeadline: string): Promise<string> => {
     const eventType = priceChangePercent > 0 ? 'opportunity' : 'trap';
     const prompt = `
