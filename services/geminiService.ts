@@ -25,18 +25,17 @@ CURRENT GAME STATE:
 export const generateMarketEventDetails = async (symbol: string, priceChangePercent: number, newsHeadline: string): Promise<string> => {
     const eventType = priceChangePercent > 0 ? 'opportunity' : 'trap';
     const prompt = `
-    You are an AI for a financial education game called Alpha Infinity. Your role is to create engaging, educational content for market events.
+    You are an AI for a financial education game called Alpha Infinity. Your role is to create engaging, educational content for market events based on real-world data.
     A market event just occurred for the symbol ${symbol}.
 
-    - Associated News Headline: "${newsHeadline}"
-    - Price Change: ${priceChangePercent.toFixed(2)}%
+    - Real News Headline: "${newsHeadline}"
+    - Real-Time Price Change: ${priceChangePercent.toFixed(2)}%
 
     Based on this, generate a JSON object for a market ${eventType}. The content should be simple, clear, and exciting for a beginner.
     
-    The JSON object must have three fields:
+    The JSON object must have two fields:
     1. "title": A very short, catchy title for the event (e.g., "Tech Breakthrough!" or "Regulatory Concerns").
     2. "explanation": A one-to-two sentence explanation of what this event means in simple terms. Explain *why* the news could cause this price movement.
-    3. "newsHeadline": Repeat the news headline provided above.
     `;
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -48,9 +47,8 @@ export const generateMarketEventDetails = async (symbol: string, priceChangePerc
                 properties: {
                     title: { type: Type.STRING },
                     explanation: { type: Type.STRING },
-                    newsHeadline: { type: Type.STRING },
                 },
-                required: ['title', 'explanation', 'newsHeadline']
+                required: ['title', 'explanation']
             }
         }
     });
@@ -68,7 +66,7 @@ export const generateChartAnalysis = async (event: MarketEvent): Promise<string>
     
     Event Details:
     - Symbol: ${event.symbol}
-    - Initial News: "${event.newsHeadline}"
+    - Initial News: "${event.news.headline}"
     - Price History (last 15 intervals): ${JSON.stringify(event.priceHistory.map(p => p.price.toFixed(2)))}
 
     Your task is to generate a comprehensive analysis as a single JSON object. The JSON must have the following structure:

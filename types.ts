@@ -34,7 +34,11 @@ export interface MarketEvent {
   // New properties for detailed event descriptions
   title: string;
   explanation: string;
-  newsHeadline: string;
+  news: {
+    headline: string;
+    source: string;
+    url: string;
+  };
   priceHistory: { time: number; price: number; }[];
 }
 

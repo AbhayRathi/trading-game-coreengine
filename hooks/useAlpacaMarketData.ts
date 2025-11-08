@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MarketEvent, AlpacaCreds } from '../types';
 import { quizQuestions } from '../data/quizQuestions';
 import { generateMarketEventDetails } from '../services/geminiService';
+import { getRecentNewsForSymbol, getInitialPriceHistory } from '../services/alpacaService';
 
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'NVDA', 'TSLA', 'GOOG', 'LINK', 'AVAX'];
-const NEWS_TEMPLATES = [
+const SYMBOLS = ['NVDA', 'TSLA', 'GOOG', 'MSFT', 'AAPL', 'AMZN', 'META', 'BTC/USD', 'ETH/USD', 'SOL/USD'];
+const MOCK_NEWS_HEADLINES = [
     "breaking: {symbol} announces partnership with major tech firm, boosting confidence.",
     "rumor mill: Speculation grows about {symbol}'s upcoming product launch.",
     "analyst report: {symbol} upgraded to 'Buy' rating citing strong growth potential.",
@@ -24,115 +25,171 @@ const RECOMMENDATIONS = [
     "Use your Gemin to unlock new features in the future."
 ];
 
-const generatePriceHistory = (isOpportunity: boolean): { time: number; price: number }[] => {
-    const history: { time: number; price: number }[] = [];
-    let price = 100; // Start price
-    const trend = isOpportunity ? 1 : -1;
-
-    for (let i = 0; i < 15; i++) {
-        history.push({ time: i, price });
-        const volatility = (Math.random() - 0.4) * 5; // -2 to +3
-        const drift = (Math.random() * 2) * trend; // Skewed in the direction of the trend
-        price += drift + volatility;
-        if (price < 10) price = 10; // Floor price
-    }
-    return history;
-};
-
-
-// Custom hook to simulate a stream of market events from Alpaca.
+// Custom hook to provide market data, either simulated or from live Alpaca stream.
 export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: AlpacaCreds) => {
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const eventIdCounter = useRef(0);
-  const geminiRequestQueue = useRef<(() => Promise<void>)[]>([]);
-  const isProcessingQueue = useRef(false);
+  const webSocket = useRef<WebSocket | null>(null);
+  const lastPrice = useRef<{ [key: string]: number }>({});
+  const isDemoMode = creds.key === 'demo';
 
-  const processGeminiQueue = async () => {
-    if (isProcessingQueue.current || geminiRequestQueue.current.length === 0) {
-        return;
+  const createAndProcessEvent = useCallback(async (symbol: string, price: number, size: number) => {
+    if (!lastPrice.current[symbol]) {
+        lastPrice.current[symbol] = price;
+        return; // Wait for the next tick to calculate change
     }
-    isProcessingQueue.current = true;
-    const task = geminiRequestQueue.current.shift();
-    if (task) {
-        await task();
-    }
-    isProcessingQueue.current = false;
-  };
-
-  useEffect(() => {
-    // Process one request every 15 seconds to stay safely within free tier limits.
-    const queueInterval = setInterval(processGeminiQueue, 15000);
-    return () => clearInterval(queueInterval);
-  }, []);
-
-  const createEvent = useCallback(async () => {
+    
+    const priceChange = price - lastPrice.current[symbol];
+    const priceChangePercent = (priceChange / lastPrice.current[symbol]) * 100;
+    lastPrice.current[symbol] = price;
+    
+    // Trigger event only on significant moves
+    if (Math.abs(priceChangePercent) < 0.05) return;
+    
     const id = `event-${eventIdCounter.current++}`;
-    const random = Math.random();
-    
-    // Forcing a mandatory quiz for demo purposes more often
-    if ((random < 0.05 || eventIdCounter.current === 2) && quizQuestions.length > 0) {
-      return { id, type: 'mandatory_quiz', question: quizQuestions[Math.floor(Math.random() * quizQuestions.length)], lane: -1, faded: false, priceHistory: [] } as MarketEvent;
-    }
-    if (random < 0.12 && quizQuestions.length > 0) {
-      return { id, type: 'quiz', question: quizQuestions[Math.floor(Math.random() * quizQuestions.length)], lane: -1, faded: false, priceHistory: [] } as MarketEvent;
-    }
-    if (random < 0.22) {
-        return { id, type: 'recommendation', text: RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)], lane: -1, faded: false, priceHistory: [] } as MarketEvent;
-    }
-
-    const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-    const priceChangePercent = (Math.random() - 0.45) * 5; // Skewed slightly positive, from approx -2.25% to +2.75%
     const type = priceChangePercent > 0 ? 'opportunity' : 'trap';
-    const value = Math.abs(priceChangePercent * 10) + 5; // P&L value
+    const value = Math.abs(priceChangePercent * 10) + (size / 100); // P&L value based on change and size
     
-    const newsTemplate = NEWS_TEMPLATES[Math.floor(Math.random() * NEWS_TEMPLATES.length)];
-    const newsHeadline = newsTemplate.replace('{symbol}', symbol);
-    const priceHistory = generatePriceHistory(type === 'opportunity');
+    try {
+        const [news, priceHistory] = await Promise.all([
+            getRecentNewsForSymbol(symbol, creds),
+            getInitialPriceHistory(symbol, creds)
+        ]);
 
-    const baseEvent: MarketEvent = {
-      id,
-      type,
-      symbol,
-      value: type === 'trap' ? -value : value,
-      lane: Math.floor(Math.random() * 3),
-      faded: false,
-      title: "Market Movement",
-      explanation: "Price has changed due to market activity.",
-      newsHeadline: newsHeadline,
-      priceHistory,
-    };
-    
-    // Queue the Gemini API call
-    geminiRequestQueue.current.push(async () => {
-        try {
-            const jsonResponse = await generateMarketEventDetails(symbol, priceChangePercent, newsHeadline);
-            const details = JSON.parse(jsonResponse);
-            setEvents(prev => prev.map(e => e.id === id ? { ...e, ...details } : e));
-        } catch (error) {
-            console.error("Failed to generate event details from Gemini:", error);
-            // Even if Gemini fails, the base event is still in the state
-        }
-    });
-    
-    return baseEvent;
-  }, []);
+        const baseEvent: MarketEvent = {
+            id, type, symbol,
+            value: type === 'trap' ? -value : value,
+            lane: Math.floor(Math.random() * 3),
+            faded: false,
+            title: "Market Movement",
+            explanation: "Price has changed due to market activity.",
+            news, priceHistory,
+        };
+        
+        // Add event to state immediately for responsiveness
+        setEvents(prev => [...prev.slice(-14), baseEvent]);
 
+        // Then, enhance with Gemini
+        const jsonResponse = await generateMarketEventDetails(symbol, priceChangePercent, news.headline);
+        const details = JSON.parse(jsonResponse);
+        setEvents(prev => prev.map(e => e.id === id ? { ...e, ...details } : e));
+
+    } catch (error) {
+        console.error(`Failed to process event for ${symbol}:`, error);
+    }
+
+  }, [creds]);
+
+  // WebSocket connection logic for live paper trading
   useEffect(() => {
-    if (!isPlaying || !creds) {
+    if (isDemoMode || !isPlaying) {
+      if (webSocket.current) {
+        webSocket.current.close();
+        webSocket.current = null;
+      }
       return;
     }
 
-    const interval = setInterval(async () => {
-      const newEvent = await createEvent();
-      if (newEvent) {
-        setEvents(prevEvents => 
-          [...prevEvents.slice(-14), newEvent]
-        );
+    const ws = new WebSocket('wss://stream.data.alpaca.markets/v2/sip');
+    webSocket.current = ws;
+
+    ws.onopen = () => {
+      console.log('Alpaca WebSocket connected');
+      ws.send(JSON.stringify({
+        action: 'auth',
+        key: creds.key,
+        secret: creds.secret
+      }));
+      ws.send(JSON.stringify({
+        action: 'subscribe',
+        trades: SYMBOLS.filter(s => !s.includes('/')), // Alpaca stock symbols
+        quotes: [],
+        bars: []
+      }));
+       ws.send(JSON.stringify({
+        action: 'subscribe',
+        crypto_trades: SYMBOLS.filter(s => s.includes('/')), // Alpaca crypto symbols
+        crypto_quotes: [],
+        crypto_bars: []
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (Array.isArray(data)) {
+        data.forEach(msg => {
+          if ((msg.T === 't' || msg.T === 'ct') && msg.p && msg.s) {
+            // It's a stock or crypto trade message
+            createAndProcessEvent(msg.S, msg.p, msg.s);
+          }
+        });
       }
+    };
+
+    ws.onclose = () => {
+      console.log('Alpaca WebSocket disconnected');
+    };
+
+    ws.onerror = (error) => {
+      console.error('Alpaca WebSocket error:', error);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, [isPlaying, creds, isDemoMode, createAndProcessEvent]);
+
+
+  // Demo mode logic
+  useEffect(() => {
+    if (!isPlaying || !isDemoMode) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+        const id = `event-${eventIdCounter.current++}`;
+        const random = Math.random();
+        
+        if (random < 0.15) { // Occasional quiz/recommendation
+            const type = random < 0.05 ? 'quiz' : 'recommendation';
+            const eventData = type === 'quiz' 
+                ? { question: quizQuestions[Math.floor(Math.random() * quizQuestions.length)] } 
+                : { text: RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)] };
+            setEvents(prev => [...prev.slice(-14), { id, type, lane: -1, faded: false, ...eventData } as MarketEvent]);
+            return;
+        }
+
+        const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+        const priceChangePercent = (Math.random() - 0.45) * 5;
+        const type = priceChangePercent > 0 ? 'opportunity' : 'trap';
+        const value = Math.abs(priceChangePercent * 10) + 5;
+        const newsHeadline = MOCK_NEWS_HEADLINES[Math.floor(Math.random() * MOCK_NEWS_HEADLINES.length)].replace('{symbol}', symbol);
+        
+        const baseEvent: MarketEvent = {
+            id, type, symbol,
+            value: type === 'trap' ? -value : value,
+            lane: Math.floor(Math.random() * 3),
+            faded: false,
+            title: "Market Movement",
+            explanation: "Price has changed due to market activity.",
+            news: { headline: newsHeadline, source: "MarketWatch", url: "" },
+            priceHistory: [], // In demo, we don't fetch historicals.
+        };
+
+        setEvents(prev => [...prev.slice(-14), baseEvent]);
+        
+        // Simulate Gemini call
+        generateMarketEventDetails(symbol, priceChangePercent, newsHeadline).then(jsonResponse => {
+            const details = JSON.parse(jsonResponse);
+            setEvents(prev => prev.map(e => e.id === id ? { ...e, ...details } : e));
+        }).catch(err => console.error("Demo Gemini call failed:", err));
+
     }, 4000 / speed);
 
     return () => clearInterval(interval);
-  }, [speed, isPlaying, creds, createEvent]);
+  }, [speed, isPlaying, isDemoMode]);
 
   return events;
 };

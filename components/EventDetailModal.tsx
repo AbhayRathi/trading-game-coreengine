@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { MarketEvent, ChartAnalysis } from '../types';
-import { X, TrendingUp, TrendingDown, BookOpen, Newspaper, Loader2 } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, BookOpen, Newspaper, Loader2, ExternalLink } from 'lucide-react';
 import { generateChartAnalysis } from '../services/geminiService';
 import DetailedChart from './DetailedChart';
 
@@ -41,6 +41,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ isOpen, event, onCl
     ? 'bg-green-500 hover:bg-green-600' 
     : 'bg-orange-500 hover:bg-orange-600';
   const Icon = isOpportunity ? TrendingUp : TrendingDown;
+  
+  const formattedSymbol = event.symbol?.replace('/', '');
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50">
@@ -65,12 +67,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ isOpen, event, onCl
           {/* Chart */}
           <div className="lg:col-span-3 bg-slate-800/50 rounded-lg p-4 flex flex-col items-center justify-center">
             {isLoading && <Loader2 className="w-12 h-12 text-cyan-400 animate-spin" />}
-            {!isLoading && analysis && (
+            {!isLoading && analysis && event.priceHistory.length > 1 && (
               <DetailedChart 
                 priceHistory={event.priceHistory}
                 annotations={analysis.annotations}
                 isOpportunity={isOpportunity}
               />
+            )}
+            {!isLoading && event.priceHistory.length <= 1 && (
+                <div className="text-center text-slate-400">
+                    <p>Live data streaming...</p>
+                    <p className="text-xs">Chart requires more historical data to display.</p>
+                </div>
             )}
           </div>
 
@@ -93,14 +101,30 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ isOpen, event, onCl
 
                      {/* Related News */}
                     <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-                        <h3 className="font-bold text-cyan-300 mb-2 flex items-center gap-2"><Newspaper size={16} /> Related News</h3>
+                        <h3 className="font-bold text-cyan-300 mb-2 flex items-center gap-2"><Newspaper size={16} /> Live News</h3>
                         <div className="space-y-2">
-                            {analysis.relatedNews.map((news, index) => (
-                                <div key={index} className="text-sm">
-                                    <p className="text-slate-300">"{news.headline}"</p>
-                                    <p className="text-xs text-slate-500 font-semibold uppercase">{news.source}</p>
-                                </div>
-                            ))}
+                            <div className="text-sm">
+                                <p className="text-slate-300">"{event.news.headline}"</p>
+                                <p className="text-xs text-slate-500 font-semibold uppercase">{event.news.source}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                     {/* External Resources */}
+                    <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                        <h3 className="font-bold text-cyan-300 mb-2 flex items-center gap-2"><ExternalLink size={16} /> External Resources</h3>
+                        <div className="space-y-2 text-sm">
+                           {event.news.url && (
+                             <a href={event.news.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-cyan-400 hover:underline">
+                                Read Full Article <ExternalLink size={14} />
+                             </a>
+                           )}
+                           <a href={`https://www.tradingview.com/chart/?symbol=${formattedSymbol}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-cyan-400 hover:underline">
+                                View on TradingView <ExternalLink size={14} />
+                            </a>
+                            <a href={`https://finance.yahoo.com/quote/${formattedSymbol}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-cyan-400 hover:underline">
+                                View on Yahoo Finance <ExternalLink size={14} />
+                            </a>
                         </div>
                     </div>
                 </>

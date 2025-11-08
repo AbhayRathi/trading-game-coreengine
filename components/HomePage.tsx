@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AlpacaCreds, IntegrationService } from '../types';
-import { Eye, EyeOff, PlayCircle, Link, TrendingUp, Bot, PercentCircle, Banknote, BotMessageSquare, Wallet, Send } from 'lucide-react';
+import { Eye, EyeOff, PlayCircle, Link, TrendingUp, Bot, PercentCircle, Banknote, BotMessageSquare, Wallet, Send, TestTube2, BarChart } from 'lucide-react';
 import Background from './Background';
 import InvestmentSimulator from './InvestmentSimulator';
 import ConnectionModal from './ConnectionModal';
@@ -95,15 +95,30 @@ const HomePage: React.FC<HomePageProps> = ({ onLaunchSimulation, onLaunchDemo })
           {/* Login Panel */}
           <div id="get-started" className="lg:col-span-2 w-full">
              <div className="w-full h-full bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 md:p-8">
-                <h2 className="text-2xl font-bold text-center text-slate-800">Get Started</h2>
-                <p className="text-center text-slate-500 mb-6">Connect via Alpaca or use a demo account</p>
+                <h2 className="text-2xl font-bold text-center text-slate-800">Choose Your Mode</h2>
+                <p className="text-center text-slate-500 mb-6">Play with simulated data or connect to the live market.</p>
+                
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                    <button onClick={onLaunchDemo} className="w-full flex flex-col items-center justify-center gap-2 p-4 font-semibold text-lg text-white bg-amber-500 rounded-lg shadow-md hover:bg-amber-600 transition-all duration-300 transform hover:scale-105">
+                        <TestTube2 />
+                        Demo Mode
+                    </button>
+                    <button onClick={handleLaunch} className="w-full flex flex-col items-center justify-center gap-2 p-4 font-semibold text-lg text-white bg-cyan-500 rounded-lg shadow-md hover:bg-cyan-600 transition-all duration-300 transform hover:scale-105">
+                       <BarChart />
+                       Live Paper Trading
+                    </button>
+                </div>
 
                 <div className="space-y-4">
+                  <p className="text-xs text-center text-slate-500 bg-slate-100 p-2 rounded-md">
+                    For <strong>Live Paper Trading</strong>, connect your Alpaca paper trading account. It's risk-free and uses real market data. 
+                    <a href="https://alpaca.markets/trading-platforms/paper-trading" target="_blank" rel="noopener noreferrer" className="text-cyan-600 font-bold hover:underline"> Get a free key here.</a>
+                  </p>
                   <div>
                       <label className="text-sm font-semibold text-slate-600 block mb-1.5">Alpaca API Key</label>
                        <input 
                           type="text"
-                          placeholder="Your API Key"
+                          placeholder="Your Paper Trading API Key"
                           value={apiKey}
                           onChange={(e) => { setApiKey(e.target.value); setError(''); }}
                           className="w-full bg-white border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-colors"
@@ -113,7 +128,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLaunchSimulation, onLaunchDemo })
                       <label className="text-sm font-semibold text-slate-600 block mb-1.5">Alpaca Secret Key</label>
                       <input 
                           type={showSecret ? 'text' : 'password'}
-                          placeholder="Your Secret Key"
+                          placeholder="Your Paper Trading Secret Key"
                           value={apiSecret}
                           onChange={(e) => { setApiSecret(e.target.value); setError(''); }}
                           className="w-full bg-white border border-slate-300 rounded-lg p-3 pr-10 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-colors"
@@ -124,19 +139,6 @@ const HomePage: React.FC<HomePageProps> = ({ onLaunchSimulation, onLaunchDemo })
                   </div>
                 </div>
                 {error && <p className="text-red-500 text-center mt-4 text-sm">{error}</p>}
-                <button 
-                  onClick={handleLaunch}
-                  className="mt-6 w-full flex items-center justify-center gap-2 px-8 py-3 font-semibold text-lg text-white bg-cyan-500 rounded-lg shadow-md hover:bg-cyan-600 transition-all duration-300 transform hover:scale-105"
-                >
-                  <PlayCircle />
-                  PLAY NOW!
-                </button>
-
-                <div className="mt-5 text-center">
-                  <button onClick={onLaunchDemo} className="text-sm text-slate-500 hover:text-cyan-600 hover:underline transition-colors">
-                    or continue with a Demo account
-                  </button>
-                </div>
              </div>
           </div>
           
