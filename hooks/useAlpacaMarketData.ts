@@ -16,7 +16,7 @@ const MOCK_NEWS_HEADLINES = [
     "regulatory news: Government announces unexpected regulations impacting {symbol} and its sector.",
     "market correction: Broader market downturn pulls {symbol} prices lower.",
     "competitor action: A major competitor to {symbol} releases a groundbreaking product.",
-    "security concern: Reports of a minor security vulnerability in {symbol}'s ecosystem are circulating.",
+    "security concern: Reports of a minor security vulnerability in {symbol}''s ecosystem are circulating.",
     "profit taking: After a recent rally, investors appear to be taking profits on {symbol}."
 ];
 const RECOMMENDATIONS = [
@@ -36,6 +36,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
   const isDemoMode = creds.key === 'demo';
   const [marketPulse, setMarketPulse] = useState(0); // -1 for down, 0 for neutral, 1 for up
   const lastSpyPrice = useRef<number | null>(null);
+  const lastGeminiCall = useRef<{ [symbol: string]: number }>({}); // For throttling API calls
   
   const updateEvent = useCallback((updatedEvent: GameEvent) => {
     setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
@@ -57,6 +58,14 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
     lastPrice.current[symbol] = price;
     
     if (Math.abs(priceChangePercent) < 0.05) return;
+    
+    // FIX: Throttle Gemini API calls to prevent rate-limiting on volatile stocks
+    const now = Date.now();
+    const lastCallTime = lastGeminiCall.current[symbol] ?? 0;
+    if (now - lastCallTime < 5000) { // Limit to one call every 5 seconds per symbol
+        return;
+    }
+    lastGeminiCall.current[symbol] = now;
     
     const id = `event-${eventIdCounter.current++}`;
     let type: 'opportunity' | 'trap' = priceChangePercent > 0 ? 'opportunity' : 'trap';
@@ -218,7 +227,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             updateEvent({ ...baseEvent, ...details });
         }).catch(err => console.error("Demo Gemini call failed:", err));
 
-    }, 2500 / speed);
+    }, 5000 / speed); // FIX: Increased interval to reduce API call frequency
 
     return () => clearInterval(interval);
   }, [speed, isPlaying, isDemoMode, activeGlobalEvent, createForecastEvent, updateEvent]);
