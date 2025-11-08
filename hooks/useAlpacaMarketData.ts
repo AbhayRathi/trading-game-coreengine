@@ -36,10 +36,11 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
   const isDemoMode = creds.key === 'demo';
   const [marketPulse, setMarketPulse] = useState(0); // -1 for down, 0 for neutral, 1 for up
   const lastSpyPrice = useRef<number | null>(null);
-  const lastGeminiCall = useRef<{ [symbol: string]: number }>({}); // For throttling API calls
-  const lastForecastCall = useRef<number>(0); // For throttling forecast API calls
-  const lastDemoMarketEventCall = useRef<number>(0);
   
+  // --- REVISED THROTTLING REFS ---
+  const lastGeminiCall = useRef<{ [symbol: string]: number }>({}); // Per-symbol cooldown for live events
+  const lastGlobalGeminiCall = useRef<number>(0); // Global cooldown for live events
+
   const updateEvent = useCallback((updatedEvent: GameEvent) => {
     setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
   }, []);
@@ -64,9 +65,13 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         const threshold = isCrypto ? 0.02 : 0.01;
         if (Math.abs(priceChangePercent) < threshold) return;
         
+        // --- NEW, STRICTER THROTTLING FOR LIVE MODE ---
         const now = Date.now();
         const lastCallTime = lastGeminiCall.current[symbol] ?? 0;
-        if (now - lastCallTime < 5000) return;
+        if (now - lastGlobalGeminiCall.current < 10000) return; // GLOBAL COOLDOWN: At most 1 event every 10 seconds.
+        if (now - lastCallTime < 60000) return; // PER-SYMBOL COOLDOWN: At most 1 event per minute for the same symbol.
+
+        lastGlobalGeminiCall.current = now;
         lastGeminiCall.current[symbol] = now;
         
         const id = `event-${eventIdCounter.current++}`;
@@ -79,7 +84,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
         
         const value = Math.abs(priceChangePercent * 10) + (size / 100);
 
-        // Create a placeholder event immediately for instant UI feedback
         const baseEvent: MarketEvent = {
             id, type, symbol, value: type === 'trap' ? -value : value,
             lane: Math.floor(Math.random() * 3),
@@ -90,7 +94,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
 
         setEvents(prev => [...prev.slice(-14), baseEvent]);
 
-        // Asynchronously enrich the event with data from Alpaca and Gemini
         try {
             const news = await getRecentNewsForSymbol(symbol, creds);
             const [priceHistory, geminiResponse] = await Promise.all([
@@ -160,14 +163,52 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
     };
   }, [isPlaying, creds, isDemoMode, createAndProcessEvent]);
   
-  // --- UNIFIED GAMIFICATION LOGIC ---
-  
-  // Helper function to create a Forecast Event
-  const createForecastEvent = useCallback(() => {
-    const now = Date.now();
-    if (now - lastForecastCall.current < 30000) return;
-    lastForecastCall.current = now;
+  // --- UNIFIED GAMIFICATION & DEMO LOGIC ---
+  const createDemoMarketEvent = useCallback(() => {
+    const id = `event-${eventIdCounter.current++}`;
 
+    // Chance to create a global event instead of a market event
+    if (Math.random() < 0.15 && !activeGlobalEvent) {
+        const isShock = Math.random() > 0.5;
+        setEvents(prev => [...prev.slice(-14), {
+            id, type: isShock ? 'shock' : 'streak',
+            title: isShock ? 'Market Shock!' : 'Sector Rally!',
+            description: isShock ? 'Negative news drags market down!' : 'Tech sector booms on breakthrough news!',
+            duration: 20, active: true, lane: -1
+        } as GlobalMarketEvent]);
+        return;
+    }
+
+    let symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+    let priceChangePercent = (Math.random() - 0.45) * 5;
+
+    if (activeGlobalEvent) {
+        if (activeGlobalEvent.type === 'shock') priceChangePercent = -Math.abs(priceChangePercent);
+        else {
+            priceChangePercent = Math.abs(priceChangePercent);
+            symbol = TECH_SYMBOLS[Math.floor(Math.random() * TECH_SYMBOLS.length)];
+        }
+    }
+    
+    const type = priceChangePercent > 0 ? 'opportunity' : 'trap';
+    const value = Math.abs(priceChangePercent * 10) + 5;
+    const newsHeadline = MOCK_NEWS_HEADLINES[Math.floor(Math.random() * MOCK_NEWS_HEADLINES.length)].replace('{symbol}', symbol);
+    
+    const baseEvent: MarketEvent = {
+        id, type, symbol, value: type === 'trap' ? -value : value, lane: Math.floor(Math.random() * 3),
+        faded: false, title: "Market Movement", explanation: "Price has changed.",
+        news: { headline: newsHeadline, source: "MarketWatch", url: "" }, priceHistory: Array.from({length: 15}, (_, i) => ({time: i, price: 100 + Math.sin(i) * priceChangePercent + (Math.random()-0.5) * 2})),
+    };
+
+    setEvents(prev => [...prev.slice(-14), baseEvent]);
+    
+    generateMarketEventDetails(symbol, priceChangePercent, newsHeadline).then(jsonResponse => {
+        const details = JSON.parse(jsonResponse);
+        updateEvent({ ...baseEvent, ...details });
+    }).catch(err => console.error("Demo Gemini call failed:", err));
+  }, [activeGlobalEvent, updateEvent]);
+  
+  const createForecastEvent = useCallback(() => {
     const id = `event-${eventIdCounter.current++}`;
     const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
     
@@ -190,7 +231,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
     }).catch(err => console.error("Forecast Gemini call failed:", err));
   }, [speed, updateEvent]);
   
-  // Helper function to create a Quiz Event
   const createQuizEvent = useCallback(() => {
       const id = `event-${eventIdCounter.current++}`;
       const question = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
@@ -200,7 +240,6 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
       setEvents(prev => [...prev.slice(-14), quizEvent]);
   }, []);
 
-  // Helper function to create a Recommendation Event
   const createRecommendationEvent = useCallback(() => {
       const id = `event-${eventIdCounter.current++}`;
       const recommendation = RECOMMENDATIONS[Math.floor(Math.random() * RECOMMENDATIONS.length)];
@@ -210,82 +249,41 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
       setEvents(prev => [...prev.slice(-14), recommendationEvent]);
   }, []);
   
-  // Effect for Demo Mode: Simulates MarketEvents and GlobalEvents
-  useEffect(() => {
-    if (!isPlaying || !isDemoMode) return;
-
-    const demoMarketInterval = setInterval(() => {
-        const id = `event-${eventIdCounter.current++}`;
-        
-        if (Math.random() < 0.1 && !activeGlobalEvent) {
-             const isShock = Math.random() > 0.5;
-            setEvents(prev => [...prev.slice(-14), {
-                id, type: isShock ? 'shock' : 'streak',
-                title: isShock ? 'Market Shock!' : 'Sector Rally!',
-                description: isShock ? 'Negative news drags market down!' : 'Tech sector booms on breakthrough news!',
-                duration: 20, active: true, lane: -1
-            } as GlobalMarketEvent]);
-            return;
-        }
-        
-        const now = Date.now();
-        if (now - lastDemoMarketEventCall.current < 10000) return;
-        lastDemoMarketEventCall.current = now;
-
-        let symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-        let priceChangePercent = (Math.random() - 0.45) * 5;
-
-        if (activeGlobalEvent) {
-            if (activeGlobalEvent.type === 'shock') priceChangePercent = -Math.abs(priceChangePercent);
-            else {
-                priceChangePercent = Math.abs(priceChangePercent);
-                symbol = TECH_SYMBOLS[Math.floor(Math.random() * TECH_SYMBOLS.length)];
-            }
-        }
-        
-        const type = priceChangePercent > 0 ? 'opportunity' : 'trap';
-        const value = Math.abs(priceChangePercent * 10) + 5;
-        const newsHeadline = MOCK_NEWS_HEADLINES[Math.floor(Math.random() * MOCK_NEWS_HEADLINES.length)].replace('{symbol}', symbol);
-        
-        const baseEvent: MarketEvent = {
-            id, type, symbol, value: type === 'trap' ? -value : value, lane: Math.floor(Math.random() * 3),
-            faded: false, title: "Market Movement", explanation: "Price has changed.",
-            news: { headline: newsHeadline, source: "MarketWatch", url: "" }, priceHistory: Array.from({length: 15}, (_, i) => ({time: i, price: 100 + Math.sin(i) * priceChangePercent + (Math.random()-0.5) * 2})),
-        };
-
-        setEvents(prev => [...prev.slice(-14), baseEvent]);
-        
-        generateMarketEventDetails(symbol, priceChangePercent, newsHeadline).then(jsonResponse => {
-            const details = JSON.parse(jsonResponse);
-            updateEvent({ ...baseEvent, ...details });
-        }).catch(err => console.error("Demo Gemini call failed:", err));
-
-    }, 18000 / speed);
-
-    return () => clearInterval(demoMarketInterval);
-  }, [speed, isPlaying, isDemoMode, activeGlobalEvent, updateEvent]);
-  
-  
-  // Effect for Game Events (Quiz, Recs, Forecast): Runs in BOTH modes
+  // --- NEW UNIFIED GAME LOOP ---
   useEffect(() => {
     if (!isPlaying) return;
 
-    const gameEventInterval = setInterval(() => {
+    // This loop runs at a calm pace, taking one action every ~30 seconds.
+    const gameLoopInterval = setInterval(() => {
         const random = Math.random();
 
-        if (random < 0.25) {
-            createQuizEvent();
-        } else if (random < 0.45) {
-            createRecommendationEvent();
-        } else if (random < 0.60) {
+        // Each "tick" has one opportunity to create a major event.
+        // This ensures API calls are naturally spaced out.
+        if (isDemoMode && random < 0.33) {
+            // ~33% chance to generate a Gemini-powered market event in demo mode.
+            createDemoMarketEvent();
+        } else if (random < 0.66) {
+            // ~33% chance to generate a Gemini-powered forecast event (runs in both modes).
             createForecastEvent();
+        } else {
+            // ~34% chance for a "cheap" event that doesn't use the Gemini API.
+            if (Math.random() < 0.5) {
+                createQuizEvent();
+            } else {
+                createRecommendationEvent();
+            }
         }
-        // ~40% chance for nothing, providing breathing room
-    }, 12000 / speed); 
+        
+        if (isDemoMode) {
+            // Also simulate market pulse in demo mode to keep the UI active.
+            setMarketPulse(Math.floor(Math.random() * 3) - 1);
+        }
 
-    return () => clearInterval(gameEventInterval);
+    }, 30000 / speed);
 
-  }, [isPlaying, speed, createQuizEvent, createRecommendationEvent, createForecastEvent]);
+    return () => clearInterval(gameLoopInterval);
+
+  }, [isPlaying, speed, isDemoMode, activeGlobalEvent, createDemoMarketEvent, createForecastEvent, createQuizEvent, createRecommendationEvent]);
 
 
   return { events, marketPulse, updateEvent };
