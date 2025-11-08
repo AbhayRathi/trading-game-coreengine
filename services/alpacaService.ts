@@ -1,5 +1,6 @@
 import type { AlpacaCreds } from '../types';
 
+const API_URL = 'https://paper-api.alpaca.markets';
 const NEWS_API_URL = 'https://data.alpaca.markets/v1beta1/news';
 const DATA_API_URL = 'https://data.alpaca.markets/v2';
 
@@ -7,8 +8,51 @@ const getAuthHeaders = (creds: AlpacaCreds) => {
     return {
         'APCA-API-KEY-ID': creds.key,
         'APCA-API-SECRET-KEY': creds.secret,
+        'Content-Type': 'application/json',
     };
 };
+
+export const getAlpacaAccount = async (creds: AlpacaCreds): Promise<{ equity: number }> => {
+    const response = await fetch(`${API_URL}/v2/account`, {
+        headers: getAuthHeaders(creds),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to fetch Alpaca account: ${await response.text()}`);
+    }
+    const data = await response.json();
+    return { equity: parseFloat(data.equity) };
+};
+
+export const placeAlpacaOrder = async (symbol: string, qty: number, side: 'buy' | 'sell', creds: AlpacaCreds): Promise<any> => {
+    const order = {
+        symbol,
+        qty,
+        side,
+        type: 'market',
+        time_in_force: 'day',
+    };
+    const response = await fetch(`${API_URL}/v2/orders`, {
+        method: 'POST',
+        headers: getAuthHeaders(creds),
+        body: JSON.stringify(order),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to place Alpaca order: ${await response.text()}`);
+    }
+    return await response.json();
+};
+
+export const closeAllPositions = async (creds: AlpacaCreds): Promise<any> => {
+    const response = await fetch(`${API_URL}/v2/positions`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(creds),
+        // Adding `close_orders: true` would also cancel open orders, but we only have market orders.
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to close all positions: ${await response.text()}`);
+    }
+    return await response.json();
+}
 
 // Fetches the most recent news article for a given symbol
 export const getRecentNewsForSymbol = async (symbol: string, creds: AlpacaCreds): Promise<{ headline: string; source: string; url: string; }> => {

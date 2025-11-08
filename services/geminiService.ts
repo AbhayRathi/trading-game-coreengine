@@ -14,7 +14,8 @@ const formatContextForPrompt = (context: GameContext): string => {
     return `
 ---
 CURRENT GAME STATE:
-- P&L: ${stats.pnl.toFixed(2)}
+// FIX: Property 'pnl' does not exist on type 'PlayerStats'. Calculated P&L from equity.
+- P&L: ${(stats.equity - 100000).toFixed(2)}
 - Current Streak: ${stats.streak}
 - Gemin Balance: ${stats.gemin}
 - Visible Market Events: ${eventSummary}

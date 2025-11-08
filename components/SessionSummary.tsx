@@ -19,8 +19,9 @@ const MOCK_LEADERBOARD = [
 ];
 
 const SessionSummary: React.FC<SessionSummaryProps> = ({ stats, onRestart }) => {
-    const userFinalScore = stats.pnl;
-    const sortedLeaderboard = [...MOCK_LEADERBOARD, { name: 'You', score: userFinalScore }]
+    // Assuming paper account starts at 100k for P&L calculation
+    const userFinalPnl = stats.equity - 100000;
+    const sortedLeaderboard = [...MOCK_LEADERBOARD, { name: 'You', score: userFinalPnl }]
         .sort((a, b) => b.score - a.score);
     const userRank = sortedLeaderboard.findIndex(p => p.name === 'You') + 1;
 
@@ -34,7 +35,7 @@ const SessionSummary: React.FC<SessionSummaryProps> = ({ stats, onRestart }) => 
         
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 text-left">
-            <StatCard icon={<TrendingUp />} title="Final P&L" value={`$${userFinalScore.toFixed(2)}`} color="text-sky-500" />
+            <StatCard icon={<TrendingUp />} title="Final P&L" value={`$${userFinalPnl.toFixed(2)}`} color="text-sky-500" />
             <StatCard icon={<Zap />} title="Best Streak" value={`${stats.streak}`} color="text-amber-500" />
             <StatCard icon={<ChevronsUp />} title="Rank" value={`#${userRank}`} color="text-purple-500" />
         </div>

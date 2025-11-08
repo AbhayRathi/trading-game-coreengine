@@ -59,7 +59,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
     
     if (Math.abs(priceChangePercent) < 0.05) return;
     
-    // FIX: Throttle Gemini API calls to prevent rate-limiting on volatile stocks
+    // Throttle Gemini API calls to prevent rate-limiting on volatile stocks
     const now = Date.now();
     const lastCallTime = lastGeminiCall.current[symbol] ?? 0;
     if (now - lastCallTime < 5000) { // Limit to one call every 5 seconds per symbol
@@ -227,7 +227,7 @@ export const useAlpacaMarketData = (speed: number, isPlaying: boolean, creds: Al
             updateEvent({ ...baseEvent, ...details });
         }).catch(err => console.error("Demo Gemini call failed:", err));
 
-    }, 5000 / speed); // FIX: Increased interval to reduce API call frequency
+    }, 5000); // FIX: Decoupled API call frequency from game speed to prevent rate limiting.
 
     return () => clearInterval(interval);
   }, [speed, isPlaying, isDemoMode, activeGlobalEvent, createForecastEvent, updateEvent]);

@@ -1,5 +1,5 @@
 export interface PlayerStats {
-  pnl: number;
+  equity: number;
   btc: number;
   streak: number;
   gemin: number;

@@ -11,13 +11,13 @@ import MiniChart from './MiniChart';
 import GlobalEventBanner from './GlobalEventBanner';
 import { useAlpacaMarketData } from '../hooks/useAlpacaMarketData';
 import { generateQuizQuestion, generateKeyTakeaway } from '../services/geminiService';
+import { getAlpacaAccount, placeAlpacaOrder, closeAllPositions } from '../services/alpacaService';
 import type { PlayerStats, GameSettings, QuizQuestion, MarketEvent, KeyTakeaway, AlpacaCreds, GameEffect, GlobalMarketEvent, PlayerPerks, GameEvent, ForecastEvent, QuizEvent, RecommendationEvent } from '../types';
 import { HelpCircle, Eye, EyeOff, GitCommit } from 'lucide-react';
 
 const STREAK_FOR_POWERUP = 5;
 const TRAP_VALUE_FOR_GLITCH = -50;
 
-// FIX: Moved GameViewProps interface outside of the component for correct scope.
 interface GameViewProps {
   stats: PlayerStats;
   setStats: React.Dispatch<React.SetStateAction<PlayerStats>>;
@@ -44,6 +44,7 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
   const [activeEffects, setActiveEffects] = useState<GameEffect[]>([]);
   const [globalEvent, setGlobalEvent] = useState<GlobalMarketEvent | null>(null);
   
+  const isDemo = alpacaCreds.key === 'demo';
   const { events, marketPulse, updateEvent } = useAlpacaMarketData(settings.speed, !isPaused && !isQuizOpen && !selectedEvent && !selectedForecast, alpacaCreds, globalEvent);
   
   const POWERUPS: Record<'MARKET_SIGHT', GameEffect> = {
@@ -52,6 +53,26 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
   const GLITCHES: Record<'MARKET_FOG', GameEffect> = {
     'MARKET_FOG': { id: 'MARKET_FOG', type: 'glitch', name: 'Market Fog', description: 'Hides event details, increasing uncertainty.', duration: 20 - (perks.shorterGlitches ? 5 : 0), icon: EyeOff },
   };
+
+  // Sync with Alpaca account on start and periodically
+  useEffect(() => {
+    if (isDemo) return;
+    
+    const syncAccount = async () => {
+        try {
+            const account = await getAlpacaAccount(alpacaCreds);
+            setStats(prev => ({...prev, equity: account.equity}));
+        } catch (error) {
+            console.error("Failed to sync Alpaca account:", error);
+            // Handle error, maybe show a notification to the user
+        }
+    };
+
+    syncAccount(); // Sync on component mount
+    const interval = setInterval(syncAccount, 5000); // Sync every 5 seconds
+    return () => clearInterval(interval);
+  }, [alpacaCreds, setStats, isDemo]);
+
 
   const isEvent = <T extends GameEvent>(type: T['type']) => (event: GameEvent): event is T => event.type === type;
 
@@ -111,33 +132,56 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
     }
   }, []);
 
-  const handleCloseEventDetail = useCallback((didExecute: boolean) => {
+  const handleCloseEventDetail = useCallback(async (didExecute: boolean) => {
     if (didExecute && selectedEvent) {
-       if (selectedEvent.type === 'opportunity') {
-        const newStreak = stats.streak + 1;
-        setStats(prev => ({
-          ...prev,
-          pnl: prev.pnl + selectedEvent.value!,
-          streak: newStreak,
-          gemin: prev.gemin + 1,
-        }));
-        if (newStreak > 0 && newStreak % STREAK_FOR_POWERUP === 0) {
-          setActiveEffects(prev => [...prev, POWERUPS.MARKET_SIGHT]);
-        }
-      } else { // trap
-        setStats(prev => ({
-          ...prev,
-          pnl: prev.pnl + selectedEvent.value!,
-          streak: 0,
-        }));
-        if (selectedEvent.value! < TRAP_VALUE_FOR_GLITCH) {
-           setActiveEffects(prev => [...prev, GLITCHES.MARKET_FOG]);
-        }
-      }
+       if (isDemo) {
+            // Original demo logic
+            if (selectedEvent.type === 'opportunity') {
+                const newStreak = stats.streak + 1;
+                setStats(prev => ({
+                ...prev,
+                equity: prev.equity + selectedEvent.value!,
+                streak: newStreak,
+                gemin: prev.gemin + 1,
+                }));
+                if (newStreak > 0 && newStreak % STREAK_FOR_POWERUP === 0) {
+                setActiveEffects(prev => [...prev, POWERUPS.MARKET_SIGHT]);
+                }
+            } else { // trap
+                setStats(prev => ({
+                ...prev,
+                equity: prev.equity + selectedEvent.value!,
+                streak: 0,
+                }));
+                if (selectedEvent.value! < TRAP_VALUE_FOR_GLITCH) {
+                setActiveEffects(prev => [...prev, GLITCHES.MARKET_FOG]);
+                }
+            }
+       } else {
+            // Live Alpaca trading logic
+            try {
+                const side = selectedEvent.type === 'opportunity' ? 'buy' : 'sell';
+                // For simplicity, we trade 1 share/coin per event.
+                // A more advanced implementation could calculate quantity based on event value.
+                const quantity = 1;
+                await placeAlpacaOrder(selectedEvent.symbol, quantity, side, alpacaCreds);
+
+                // Update streak and other game mechanics based on the action
+                 if (side === 'buy') {
+                    setStats(prev => ({...prev, streak: prev.streak + 1, gemin: prev.gemin + 1}));
+                 } else {
+                    setStats(prev => ({...prev, streak: 0}));
+                 }
+
+            } catch(error) {
+                console.error("Failed to place order:", error);
+                // Optionally show an error to the user
+            }
+       }
     }
     setSelectedEvent(null);
     setIsPaused(false);
-  }, [selectedEvent, setStats, stats.streak, POWERUPS.MARKET_SIGHT, GLITCHES.MARKET_FOG]);
+  }, [selectedEvent, setStats, stats.streak, POWERUPS.MARKET_SIGHT, GLITCHES.MARKET_FOG, alpacaCreds, isDemo]);
 
   const handleForecastPredict = useCallback((prediction: 'bullish' | 'bearish') => {
     if (selectedForecast) {
@@ -207,6 +251,20 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
   const handleDismissTakeaway = useCallback((id: string) => {
     setKeyTakeaways(prev => prev.filter(t => t.id !== id));
   }, []);
+
+  const handleLiquidate = useCallback(async () => {
+    if (isDemo) {
+        console.log("Liquidation is only available in live mode.");
+        return;
+    }
+    try {
+        await closeAllPositions(alpacaCreds);
+        // Optionally show a success message
+    } catch (error) {
+        console.error("Failed to liquidate positions:", error);
+        // Optionally show an error message
+    }
+  }, [alpacaCreds, isDemo]);
 
   const hasEffect = (id: GameEffect['id']) => activeEffects.some(e => e.id === id);
 
@@ -293,7 +351,7 @@ const GameView: React.FC<GameViewProps> = ({ stats, setStats, settings, perks, o
       <EventDetailModal isOpen={!!selectedEvent} event={selectedEvent} onClose={handleCloseEventDetail} />
       <ForecastModal isOpen={!!selectedForecast} event={selectedForecast} onClose={handleForecastPredict} />
 
-      <ActionCenter onOpenSettings={onOpenSettings} onOpenInfo={() => onOpenInfo('Market Volatility')} onOpenQuiz={() => handleOpenActionCenterQuiz('Risk Management')} onEndSession={onEndSession} isTtsEnabled={settings.tts} stats={stats} marketEvents={marketEvents} />
+      <ActionCenter onOpenSettings={onOpenSettings} onOpenInfo={() => onOpenInfo('Market Volatility')} onOpenQuiz={() => handleOpenActionCenterQuiz('Risk Management')} onEndSession={onEndSession} onLiquidate={handleLiquidate} isTtsEnabled={settings.tts} stats={stats} marketEvents={marketEvents} />
       <style>{`
         @keyframes approach { from { top: 0%; transform: scale(0.2); opacity: 1; } 85% { opacity: 1; } to { top: 100%; transform: scale(1.2); opacity: 0; } }
         @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }

@@ -27,7 +27,7 @@ const Hud: React.FC<HudProps> = ({ stats, activeEffects, marketPulse }) => {
   return (
     <header className="w-full max-w-6xl mx-auto flex justify-center sm:justify-between items-start gap-4 p-4 z-20">
       <div className="flex gap-4">
-        <StatBox title="P&L +" value={stats.pnl.toFixed(2)} subtext="PAPER BALANCE" valueColor="text-sky-500" />
+        <StatBox title="Equity" value={`$${stats.equity.toFixed(2)}`} subtext="PAPER BALANCE" valueColor="text-sky-500" />
         <StatBox title="STREAK" value={`${stats.streak}`} valueColor="text-amber-500" />
         <StatBox 
             title="Gemin" 

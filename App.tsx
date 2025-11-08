@@ -9,7 +9,7 @@ import { generateInfoCardContent } from './services/geminiService';
 import type { PlayerStats, GameSettings, InfoCardContent, AlpacaCreds, PlayerPerks } from './types';
 
 const INITIAL_STATS: PlayerStats = {
-  pnl: 0,
+  equity: 100000, // Default for demo, will be updated from Alpaca for live
   btc: 0.1,
   streak: 0,
   gemin: 10,
